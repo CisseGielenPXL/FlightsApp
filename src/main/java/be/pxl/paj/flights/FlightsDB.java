@@ -1,10 +1,6 @@
 package be.pxl.paj.flights;
 
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Statement;
+import java.sql.*;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -59,8 +55,19 @@ public class FlightsDB {
 	 * @return The authenticated user or null if login failed.
 	 */
 	public User logIn(String handle, String password) throws SQLException {
-		// TODO: implement this properly
-		return null;
+		Statement statement = conn.createStatement();
+		ResultSet resultSet = statement.executeQuery(String.format(
+				"SELECT uid, handle, name\n" +
+						"FROM CUSTOMER\n" +
+						"WHERE handle = '%s' AND password = '%s'",
+				handle, password
+		));
+		if (!resultSet.next()){
+			return null;
+		}
+		User user = new User(resultSet.getInt("uid"),resultSet.getString("handle"),resultSet.getString("name"));
+		resultSet.close();
+		return user;
 	}
 
 	/**
@@ -70,17 +77,21 @@ public class FlightsDB {
 
 		List<Flight[]> results = new ArrayList<>();
 
-		Statement stmt = conn.createStatement();
-
-		ResultSet directResults = stmt.executeQuery(String.format(
+		PreparedStatement stmt = conn.prepareStatement(
 				"SELECT fid, name, flight_num, origin_city, dest_city, " +
 						"    actual_time\n" +
 						"FROM FLIGHTS F1, CARRIERS\n" +
 						"WHERE carrier_id = cid AND actual_time IS NOT NULL AND " +
-						"    year = %d AND month_id = %d AND day_of_month = %d AND " +
-						"    origin_city = '%s' AND dest_city = '%s'\n" +
-						"ORDER BY actual_time ASC LIMIT 99",
-				date.getYear(), date.getMonthValue(), date.getDayOfMonth(), originCity, destCity));
+						"    year = ? AND month_id = ? AND day_of_month = ? AND " +
+						"    origin_city = ? AND dest_city = ?\n" +
+						"ORDER BY actual_time ASC LIMIT 99");
+
+		stmt.setInt(1,date.getYear());
+		stmt.setInt(2,date.getMonthValue());
+		stmt.setInt(3,date.getDayOfMonth());
+		stmt.setString(4,originCity);
+		stmt.setString(5,destCity);
+		ResultSet directResults = stmt.executeQuery();
 		while (directResults.next()) {
 			results.add(new Flight[] {
 					new Flight(directResults.getInt("fid"), date,
@@ -92,24 +103,29 @@ public class FlightsDB {
 			});
 		}
 		directResults.close();
-
-		ResultSet twoHopResults = stmt.executeQuery(String.format(
-				"SELECT F1.fid as fid1, C1.name as name1, " +
-						"    F1.flight_num as flight_num1, F1.origin_city as origin_city1, " +
-						"    F1.dest_city as dest_city1, F1.actual_time as actual_time1, " +
-						"    F2.fid as fid2, C2.name as name2, " +
-						"    F2.flight_num as flight_num2, F2.origin_city as origin_city2, " +
-						"    F2.dest_city as dest_city2, F2.actual_time as actual_time2\n" +
-						"FROM FLIGHTS F1, FLIGHTS F2, CARRIERS C1, CARRIERS C2\n" +
-						"WHERE F1.carrier_id = C1.cid AND F1.actual_time IS NOT NULL AND " +
-						"    F2.carrier_id = C2.cid AND F2.actual_time IS NOT NULL AND " +
-						"    F1.year = %d AND F1.month_id = %d AND F1.day_of_month = %d AND " +
-						"    F2.year = %d AND F2.month_id = %d AND F2.day_of_month = %d AND " +
-						"    F1.origin_city = '%s' AND F2.dest_city = '%s' AND" +
-						"    F1.dest_city = F2.origin_city\n" +
-						"ORDER BY F1.actual_time + F2.actual_time ASC LIMIT 99",
-				date.getYear(), date.getMonthValue(), date.getDayOfMonth(), date.getYear(), date.getMonthValue(), date.getDayOfMonth(),
-				originCity, destCity));
+		stmt = conn.prepareStatement("SELECT F1.fid as fid1, C1.name as name1, " +
+				"    F1.flight_num as flight_num1, F1.origin_city as origin_city1, " +
+				"    F1.dest_city as dest_city1, F1.actual_time as actual_time1, " +
+				"    F2.fid as fid2, C2.name as name2, " +
+				"    F2.flight_num as flight_num2, F2.origin_city as origin_city2, " +
+				"    F2.dest_city as dest_city2, F2.actual_time as actual_time2\n" +
+				"FROM FLIGHTS F1, FLIGHTS F2, CARRIERS C1, CARRIERS C2\n" +
+				"WHERE F1.carrier_id = C1.cid AND F1.actual_time IS NOT NULL AND " +
+				"    F2.carrier_id = C2.cid AND F2.actual_time IS NOT NULL AND " +
+				"    F1.year = ? AND F1.month_id = ? AND F1.day_of_month = ? AND " +
+				"    F2.year = ? AND F2.month_id = ? AND F2.day_of_month = ? AND " +
+				"    F1.origin_city = ? AND F2.dest_city = ? AND" +
+				"    F1.dest_city = F2.origin_city\n" +
+				"ORDER BY F1.actual_time + F2.actual_time ASC LIMIT 99");
+		stmt.setInt(1, date.getYear());
+		stmt.setInt(2, date.getMonthValue());
+		stmt.setInt(3, date.getDayOfMonth());
+		stmt.setInt(4, date.getYear());
+		stmt.setInt(5, date.getMonthValue());
+		stmt.setInt(6, date.getDayOfMonth());
+		stmt.setString(7,originCity);
+		stmt.setString(8,destCity);
+		ResultSet twoHopResults = stmt.executeQuery();
 		while (twoHopResults.next()) {
 			results.add(new Flight[] {
 					new Flight(twoHopResults.getInt("fid1"), date,
